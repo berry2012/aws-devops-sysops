@@ -9,5 +9,5 @@ INSTANCE_ID=$(aws ec2 describe-instances \
 
 echo $INSTANCE_ID >> output.txt
 cat output.txt
-aws ssm start-session --target $INSTANCE_ID --region $REGION
+# aws ssm start-session --target $INSTANCE_ID --region $REGION
 
