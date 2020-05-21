@@ -6,5 +6,5 @@ INSTANCE_ID=$(aws ec2 describe-instances \
     --query 'Reservations[*].Instances[*].{Instance:InstanceId,Status:State.Name,Name:Tags[?Key==`Name`]|[0].Value}' \
     --output text | grep 'running' | awk -F' ' '{print $1}')
 
-ssm $INSTANCE_ID
+aws ssm start-session --target $INSTANCE_ID
 
