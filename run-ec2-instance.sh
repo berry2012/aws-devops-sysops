@@ -9,7 +9,7 @@ INSTANCE_ID=$(aws ec2 describe-instances \
     --output text | grep 'running' | awk -F' ' '{print $1}')
 
 echo $INSTANCE_ID >> output.txt
-cat output.txt
+
 
 # use ssm to run the EC2 instance
 # aws ssm start-session --target $INSTANCE_ID --region $REGION
