@@ -4,7 +4,7 @@
 - DevSecOps
 - SysOps
 
-## Scripts may include
+## Scripts includes
 * Bash Scripts
 * Python Scripts
 * Ansible playbooks
