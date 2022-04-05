@@ -13,7 +13,7 @@ ec2 = boto3.client('ec2', region_name=region)
 
 def stop_instances():
     response = ec2.stop_instances(
-        InstanceIds=str(instances),
+        InstanceIds=instances,
         Force=True
     )
     print('stopped your instances: ' + str(instances))
