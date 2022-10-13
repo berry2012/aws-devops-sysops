@@ -94,6 +94,8 @@ Mappings:
       Arch: HVM64
     t2.medium:
       Arch: HVM64
+    t3.medium:
+      Arch: HVM64      
     t2.large:
       Arch: HVM64
     m1.small:
