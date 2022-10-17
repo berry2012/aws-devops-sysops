@@ -62,7 +62,13 @@ docker push ${aws_account_id}.dkr.ecr.${REGION}.amazonaws.com/eb-ecs-repository:
 
 ## Deployment
 
-Update the environment variable parameters in the `Dockerrun.aws.json` file
+Update the environment variable parameters `aws_account_id` and `REGION` in the `Dockerrun.aws.json` file.
+
+The EB IAM assumed-role `aws-elasticbeanstalk-ec2-role` requires the following IAM permissions to work with images stored in ECR.
+- ecr:GetAuthorizationToken
+- ecr:GetDownloadUrlForLayer
+- ecr:BatchGetImage
+- ecr:ListImages
 
 ```
     eb create
