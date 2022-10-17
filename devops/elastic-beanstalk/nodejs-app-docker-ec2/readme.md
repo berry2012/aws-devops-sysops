@@ -30,7 +30,7 @@ curl http://localhost:8080
 ## Download the source code and then initialize. Follow the command line instructions
 
 ```
-    cd nodejs-app-docker
+    cd nodejs-app-docker-ec2
     eb init
     
 ```
@@ -43,7 +43,6 @@ curl http://localhost:8080
 
     eb health 
     
-    eb open
  ```
 
 ## Clean Up

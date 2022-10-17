@@ -62,6 +62,8 @@ docker push ${aws_account_id}.dkr.ecr.${REGION}.amazonaws.com/eb-ecs-repository:
 
 ## Deployment
 
+Update the environment variable parameters in the `Dockerrun.aws.json` file
+
 ```
     eb create
 
