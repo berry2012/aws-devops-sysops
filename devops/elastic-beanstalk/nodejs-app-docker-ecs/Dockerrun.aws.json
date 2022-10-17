@@ -1,0 +1,38 @@
+{
+  "AWSEBDockerrunVersion": 2,
+  "volumes": [ 
+  ],
+  "containerDefinitions": [
+    {
+      "name": "app1",
+      "image": "${aws_account_id}.dkr.ecr.${REGION}.amazonaws.com/eb-ecs-repository:app1",
+      "essential": true,
+      "memory": 128,
+      "portMappings": [
+        {
+          "hostPort": 8080,
+          "containerPort": 8080
+        }
+      ],      
+      "mountPoints": [
+      ]
+    },
+    {
+      "name": "app2",
+      "image": "${aws_account_id}.dkr.ecr.${REGION}.amazonaws.com/eb-ecs-repository:app2",
+      "essential": true,
+      "memory": 128,
+      "portMappings": [
+        {
+          "hostPort": 8081,
+          "containerPort": 8081
+        }
+      ],
+      "links": [
+        "app1"
+      ],
+      "mountPoints": [
+      ]
+    }
+  ]
+}
