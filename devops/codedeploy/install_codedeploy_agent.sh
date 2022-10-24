@@ -16,3 +16,6 @@ exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
     else
          echo "codedeploy-agent installation succeeded!"
     fi
+
+# check logs within EC2 instance with the command below
+# tail -f /var/log/user-data.log
