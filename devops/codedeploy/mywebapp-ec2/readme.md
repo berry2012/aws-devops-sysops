@@ -17,3 +17,9 @@ tree -f .
     ├── ./scripts/start_server.sh
     └── ./scripts/stop_server.sh
 ```
+
+## package the deployment application
+```
+aws deploy push --application-name mywebapp \
+    --s3-location s3://<bucket-name>s/codedeploy-mywebapp/app.zip --ignore-hidden-files --region eu-west-1 --profile work
+```    
