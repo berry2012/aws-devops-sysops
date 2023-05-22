@@ -1,0 +1,57 @@
+
+- hosts: localhost
+
+  tasks:
+    - debug:
+        msg: "Good luck! :)"
+
+    - name: Create group
+      group:
+        name: "hackercompany"
+        state: present
+
+    - name: Create Users Task
+      user:
+        name: "hackerboard"
+        state: present
+        password: "{{ default_user_password | password_hash('sha512','A512') }}"
+        shell: /bin/bash
+        group: "hackercompany"
+
+    - name: Download config.ini
+      get_url:
+        url: https://raw.githubusercontent.com/ProblemSetters/devops-inventory/1306065-ansible/config.ini
+        dest: '{{ KACKERBOARD_DIR }}'
+
+    - name: Change file ownership, group and permissions
+      file:
+        path: '{{ KACKERBOARD_DIR }}'     
+        owner: hackerboard
+        group: hackercompany
+        mode: u=rw,g=r,o=r
+
+    - name: Replace a instanceid entry with our own
+      lineinfile:
+        path: '{{ KACKERBOARD_DIR }}/config.ini'
+        regexp: '{{ instance_id }}'
+        line: '{{ AWS_INSTANCE_ID }}'
+
+    - name: Replace mode option
+      lineinfile:
+        path: '{{ KACKERBOARD_DIR }}/config.ini'
+        regexp: '^mode='
+        line: mode=debug
+
+    - name: Replace a hostname
+      lineinfile:
+        path: '{{ KACKERBOARD_DIR }}/config.ini'
+        regexp: '^hostname='
+        line: 'hostname={{inventory_hostname}}'   
+
+    - name: Remove line 
+      lineinfile:
+        path: '{{ KACKERBOARD_DIR }}/config.ini'
+        regexp: 'is_primary'
+        state: absent
+        backup: yes            
+

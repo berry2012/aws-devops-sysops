@@ -1,0 +1,89 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'AWS CloudFormation Bootstrap EC2 instance ...'
+Resources:
+  WebServerInstance:
+    Type: 'AWS::EC2::Instance'
+    Metadata:
+      Comment1: Configure the bootstrap helpers to install the Apache Web Server.
+      Comment2: Save website content to /var/www/html/index.html
+      'AWS::CloudFormation::Init':
+        configSets:
+          Install:
+            - Install
+        Install:
+          packages:
+            yum:
+              httpd: []
+          files:
+            /var/www/html/index.html:
+              content: !Join 
+                - ''
+                - - |
+                    <html>
+                  - |2
+                      <head>
+                  - |2
+                        <title>EC2 Website</title>
+                  - |2
+                        <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+                  - |2
+                      </head>
+                  - |2
+                      <body>
+                  - |2
+                        <h1>Welcome to the EC2 Website</h1>
+                  - |2
+                        <p/>
+              mode: '000600'
+              owner: apache
+              group: apache
+          services:
+            sysvinit:
+              httpd:
+                enabled: 'true'
+                ensureRunning: 'true'
+      Properties:
+        ImageId: !FindInMap 
+          - AWSRegionArch2AMI
+          - !Ref 'AWS::Region'
+          - !FindInMap 
+            - AWSInstanceType2Arch
+            - !Ref InstanceType
+            - Arch
+        InstanceType: !Ref InstanceType
+        SecurityGroups:
+          - !Ref WebServerSecurityGroup
+        KeyName: !Ref KeyName
+        UserData: !Base64 
+          'Fn::Join':
+            - ''
+            - - |
+                #!/bin/bash -xe
+              - |
+                sudo yum update -y 
+              - |
+                sudo yum install -y httpd
+              - |
+                TOKEN=`curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"` 
+              - |
+                export META_INST_ID=`curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id`
+              - |
+                cd /var/www/html
+              - |
+                echo "                <div>Your EC2 Instance is running!</div>" >> index.html                                             
+              - |
+                echo "                <div>Instance Id: $META_INST_ID</div>" >> index.html  
+              - |
+                echo "</body>" >> index.html
+              - |
+                echo "</html>" >> index.html
+              - |
+                # Install the files and packages from the metadata
+              - '/opt/aws/bin/cfn-init -v '
+              - '         --stack '
+              - !Ref 'AWS::StackName'
+              - '         --resource WebServerInstance '
+              - '         --configsets Install '
+              - '         --region '
+              - !Ref 'AWS::Region'
+              - |+
