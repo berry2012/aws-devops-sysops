@@ -98,3 +98,4 @@ echo "        </div>" >> index.html
 echo "</body>" >> index.html
 echo "</html>" >> index.html
 sudo service httpd start
+sudo systemctl enable httpd
