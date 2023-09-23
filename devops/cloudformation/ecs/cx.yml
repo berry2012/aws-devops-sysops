@@ -1,0 +1,32 @@
+  
+  # Task Definition
+  
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Ref TaskDefinitionFamilyName
+      # awsvpc is required for Fargate
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      # A role needed by ECS.
+      # "The ARN of the task execution role that containers in this task can assume. All containers in this task are granted the permissions that are specified in this role."
+      # "There is an optional task execution IAM role that you can specify with Fargate to allow your Fargate tasks to make API calls to Amazon ECR."
+      ExecutionRoleArn: !Ref ECSTaskExecutionRole
+      # "The Amazon Resource Name (ARN) of an AWS Identity and Access Management (IAM) role that grants containers in the task permission to call AWS APIs on your behalf."
+      TaskRoleArn: !Ref ECSTaskRole
+      # Secret:
+      #   Name: tcg-backend-prod
+      #   ValueFrom: !Ref EnvironmentValue
+      ContainerDefinitions:
+        - Name: !Ref ContainerName
+          Image: !Ref Image
+          Secrets:    # ------------ correct one
+            - Name: 'tcg-backend-prod'
+              ValueFrom: 'arn:aws:secretsmanager:ap-southeast-1:845847047647:secret:tcg-backend-prod-ScPxVM'
+          # secrets: ----------------------------------------------------------------------------------
+          #   name: tcg-backend-prod
+          #   valueFrom: !Ref EnvironmentValue ----------------------------------------------------------------------------------
+  

@@ -1,0 +1,30 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Run Command to Disable Temp Credentials on Cloud9"  
+Parameters:
+  EnvironmentId:
+    Description: "Cloud9 Environment ID"
+    Type: String
+
+Resources:
+
+  document: 
+    Type: AWS::SSM::Document
+    Properties:
+      Content:
+        schemaVersion: '2.2'
+        description: 'Run a script on Linux instances.'
+        parameters:
+          commands:
+            type: String
+            description: "(Required) The commands to run or the path to an existing script on the instance."
+            default: 'bash /home/ec2-user/environment/tool.sh'
+        mainSteps:
+        - action: aws:runShellScript
+          name: runCommands
+          inputs:
+            timeoutSeconds: '60'
+            runCommand:
+            - "{{ commands }}"
+      DocumentFormat: YAML
+      DocumentType: Command
+      Name: 'CFN_2_runCommand'

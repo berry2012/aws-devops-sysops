@@ -1,0 +1,433 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  EKS cluster (dedicated VPC: true, dedicated IAM: true) [created and managed by
+  eksctl]
+Mappings:
+  ServicePrincipalPartitionMap:
+    aws:
+      EC2: ec2.amazonaws.com
+      EKS: eks.amazonaws.com
+      EKSFargatePods: eks-fargate-pods.amazonaws.com
+    aws-cn:
+      EC2: ec2.amazonaws.com.cn
+      EKS: eks.amazonaws.com
+      EKSFargatePods: eks-fargate-pods.amazonaws.com
+    aws-us-gov:
+      EC2: ec2.amazonaws.com
+      EKS: eks.amazonaws.com
+      EKSFargatePods: eks-fargate-pods.amazonaws.com
+Resources:
+  PolicyNLB:
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - 'elasticloadbalancing:*'
+              - 'ec2:CreateSecurityGroup'
+              - 'ec2:Describe*'
+            Effect: Allow
+            Resource: '*'
+        Version: 2012-10-17
+      PolicyName: !Sub '${AWS::StackName}-PolicyNLB'
+      Roles:
+        - !Ref ServiceRole
+    Type: 'AWS::IAM::Policy'
+  FargatePodExecutionRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service:
+                - !FindInMap 
+                  - ServicePrincipalPartitionMap
+                  - !Ref 'AWS::Partition'
+                  - EKS
+                - !FindInMap 
+                  - ServicePrincipalPartitionMap
+                  - !Ref 'AWS::Partition'
+                  - EKSFargatePods
+        Version: 2012-10-17
+      ManagedPolicyArns:
+        - !Sub >-
+          arn:${AWS::Partition}:iam::aws:policy/AmazonEKSFargatePodExecutionRolePolicy
+    Type: 'AWS::IAM::Role'
+  ClusterSharedNodeSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Communication between all nodes in the cluster
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}/ClusterSharedNodeSecurityGroup'
+      VpcId: !Ref VPC
+  ControlPlane:
+    Type: 'AWS::EKS::Cluster'
+    Properties:
+      EncryptionConfig:
+        - Provider:
+            KeyArn: >-
+              arn:aws:kms:eu-west-1:520817024429:key/46c6602f-0a64-475a-9f57-2e406e049e9f
+          Resources:
+            - secrets
+      Name: eksworkshop-eksctl
+      ResourcesVpcConfig:
+        SecurityGroupIds:
+          - !Ref ControlPlaneSecurityGroup
+        SubnetIds:
+          - !Ref SubnetPublicEUWEST1A
+          - !Ref SubnetPublicEUWEST1B
+          - !Ref SubnetPublicEUWEST1C
+          - !Ref SubnetPrivateEUWEST1C
+          - !Ref SubnetPrivateEUWEST1A
+          - !Ref SubnetPrivateEUWEST1B
+      RoleArn: !GetAtt 
+        - ServiceRole
+        - Arn
+      Version: '1.19'
+  ControlPlaneSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Communication between the control plane and worker nodegroups
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}/ControlPlaneSecurityGroup'
+      VpcId: !Ref VPC
+  IngressDefaultClusterToNodeSG:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      Description: >-
+        Allow managed and unmanaged nodes to communicate with each other (all
+        ports)
+      FromPort: 0
+      GroupId: !Ref ClusterSharedNodeSecurityGroup
+      IpProtocol: '-1'
+      SourceSecurityGroupId: !GetAtt 
+        - ControlPlane
+        - ClusterSecurityGroupId
+      ToPort: 65535
+  IngressInterNodeGroupSG:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      Description: Allow nodes to communicate with each other (all ports)
+      FromPort: 0
+      GroupId: !Ref ClusterSharedNodeSecurityGroup
+      IpProtocol: '-1'
+      SourceSecurityGroupId: !Ref ClusterSharedNodeSecurityGroup
+      ToPort: 65535
+  IngressNodeToDefaultClusterSG:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      Description: Allow unmanaged nodes to communicate with control plane (all ports)
+      FromPort: 0
+      GroupId: !GetAtt 
+        - ControlPlane
+        - ClusterSecurityGroupId
+      IpProtocol: '-1'
+      SourceSecurityGroupId: !Ref ClusterSharedNodeSecurityGroup
+      ToPort: 65535
+  InternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}/InternetGateway'
+  NATGateway:
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      AllocationId: !GetAtt 
+        - NATIP
+        - AllocationId
+      SubnetId: !Ref SubnetPublicEUWEST1A
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}/NATGateway'
+  NATIP:
+    Type: 'AWS::EC2::EIP'
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}/NATIP'
+  NATPrivateSubnetRouteEUWEST1A:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGateway
+      RouteTableId: !Ref PrivateRouteTableEUWEST1A
+  NATPrivateSubnetRouteEUWEST1B:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGateway
+      RouteTableId: !Ref PrivateRouteTableEUWEST1B
+  NATPrivateSubnetRouteEUWEST1C:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGateway
+      RouteTableId: !Ref PrivateRouteTableEUWEST1C
+  PolicyCloudWatchMetrics:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - 'cloudwatch:PutMetricData'
+            Effect: Allow
+            Resource: '*'
+        Version: 2012-10-17
+      PolicyName: !Sub '${AWS::StackName}-PolicyCloudWatchMetrics'
+      Roles:
+        - !Ref ServiceRole
+  PolicyELBPermissions:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - 'ec2:DescribeAccountAttributes'
+              - 'ec2:DescribeAddresses'
+              - 'ec2:DescribeInternetGateways'
+            Effect: Allow
+            Resource: '*'
+        Version: 2012-10-17
+      PolicyName: !Sub '${AWS::StackName}-PolicyELBPermissions'
+      Roles:
+        - !Ref ServiceRole
+  PrivateRouteTableEUWEST1A:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}/PrivateRouteTableEUWEST1A'
+      VpcId: !Ref VPC
+  PrivateRouteTableEUWEST1B:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}/PrivateRouteTableEUWEST1B'
+      VpcId: !Ref VPC
+  PrivateRouteTableEUWEST1C:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}/PrivateRouteTableEUWEST1C'
+      VpcId: !Ref VPC
+  PublicRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}/PublicRouteTable'
+      VpcId: !Ref VPC
+  PublicSubnetRoute:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref PublicRouteTable
+    DependsOn:
+      - VPCGatewayAttachment
+  RouteTableAssociationPrivateEUWEST1A:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableEUWEST1A
+      SubnetId: !Ref SubnetPrivateEUWEST1A
+  RouteTableAssociationPrivateEUWEST1B:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableEUWEST1B
+      SubnetId: !Ref SubnetPrivateEUWEST1B
+  RouteTableAssociationPrivateEUWEST1C:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableEUWEST1C
+      SubnetId: !Ref SubnetPrivateEUWEST1C
+  RouteTableAssociationPublicEUWEST1A:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref SubnetPublicEUWEST1A
+  RouteTableAssociationPublicEUWEST1B:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref SubnetPublicEUWEST1B
+  RouteTableAssociationPublicEUWEST1C:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref SubnetPublicEUWEST1C
+  ServiceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service:
+                - !FindInMap 
+                  - ServicePrincipalPartitionMap
+                  - !Ref 'AWS::Partition'
+                  - EKS
+        Version: 2012-10-17
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonEKSClusterPolicy'
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonEKSVPCResourceController'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}/ServiceRole'
+  SubnetPrivateEUWEST1A:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      AvailabilityZone: eu-west-1a
+      CidrBlock: 192.168.96.0/19
+      Tags:
+        - Key: kubernetes.io/role/internal-elb
+          Value: '1'
+        - Key: Name
+          Value: !Sub '${AWS::StackName}/SubnetPrivateEUWEST1A'
+      VpcId: !Ref VPC
+  SubnetPrivateEUWEST1B:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      AvailabilityZone: eu-west-1b
+      CidrBlock: 192.168.128.0/19
+      Tags:
+        - Key: kubernetes.io/role/internal-elb
+          Value: '1'
+        - Key: Name
+          Value: !Sub '${AWS::StackName}/SubnetPrivateEUWEST1B'
+      VpcId: !Ref VPC
+  SubnetPrivateEUWEST1C:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      AvailabilityZone: eu-west-1c
+      CidrBlock: 192.168.160.0/19
+      Tags:
+        - Key: kubernetes.io/role/internal-elb
+          Value: '1'
+        - Key: Name
+          Value: !Sub '${AWS::StackName}/SubnetPrivateEUWEST1C'
+      VpcId: !Ref VPC
+  SubnetPublicEUWEST1A:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      AvailabilityZone: eu-west-1a
+      CidrBlock: 192.168.0.0/19
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: kubernetes.io/role/elb
+          Value: '1'
+        - Key: Name
+          Value: !Sub '${AWS::StackName}/SubnetPublicEUWEST1A'
+      VpcId: !Ref VPC
+  SubnetPublicEUWEST1B:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      AvailabilityZone: eu-west-1b
+      CidrBlock: 192.168.32.0/19
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: kubernetes.io/role/elb
+          Value: '1'
+        - Key: Name
+          Value: !Sub '${AWS::StackName}/SubnetPublicEUWEST1B'
+      VpcId: !Ref VPC
+  SubnetPublicEUWEST1C:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      AvailabilityZone: eu-west-1c
+      CidrBlock: 192.168.64.0/19
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: kubernetes.io/role/elb
+          Value: '1'
+        - Key: Name
+          Value: !Sub '${AWS::StackName}/SubnetPublicEUWEST1C'
+      VpcId: !Ref VPC
+  VPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: 192.168.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}/VPC'
+  VPCGatewayAttachment:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+Outputs:
+  FargatePodExecutionRoleARN:
+    Export:
+      Name: !Sub '${AWS::StackName}::FargatePodExecutionRoleARN'
+    Value: !GetAtt FargatePodExecutionRole.Arn
+  ARN:
+    Value: !GetAtt 
+      - ControlPlane
+      - Arn
+    Export:
+      Name: !Sub '${AWS::StackName}::ARN'
+  CertificateAuthorityData:
+    Value: !GetAtt 
+      - ControlPlane
+      - CertificateAuthorityData
+  ClusterSecurityGroupId:
+    Value: !GetAtt 
+      - ControlPlane
+      - ClusterSecurityGroupId
+    Export:
+      Name: !Sub '${AWS::StackName}::ClusterSecurityGroupId'
+  ClusterStackName:
+    Value: !Ref 'AWS::StackName'
+  Endpoint:
+    Value: !GetAtt 
+      - ControlPlane
+      - Endpoint
+    Export:
+      Name: !Sub '${AWS::StackName}::Endpoint'
+  FeatureNATMode:
+    Value: Single
+  SecurityGroup:
+    Value: !Ref ControlPlaneSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}::SecurityGroup'
+  ServiceRoleARN:
+    Value: !GetAtt 
+      - ServiceRole
+      - Arn
+    Export:
+      Name: !Sub '${AWS::StackName}::ServiceRoleARN'
+  SharedNodeSecurityGroup:
+    Value: !Ref ClusterSharedNodeSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}::SharedNodeSecurityGroup'
+  SubnetsPrivate:
+    Value: !Join 
+      - ','
+      - - !Ref SubnetPrivateEUWEST1C
+        - !Ref SubnetPrivateEUWEST1A
+        - !Ref SubnetPrivateEUWEST1B
+    Export:
+      Name: !Sub '${AWS::StackName}::SubnetsPrivate'
+  SubnetsPublic:
+    Value: !Join 
+      - ','
+      - - !Ref SubnetPublicEUWEST1A
+        - !Ref SubnetPublicEUWEST1B
+        - !Ref SubnetPublicEUWEST1C
+    Export:
+      Name: !Sub '${AWS::StackName}::SubnetsPublic'
+  VPC:
+    Value: !Ref VPC
+    Export:
+      Name: !Sub '${AWS::StackName}::VPC'

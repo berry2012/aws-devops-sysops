@@ -1,0 +1,185 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "A template to set three billing alarms for your AWS account, which also creates two SNS topics to notify you and possibly your manager/team lead when an alarm has breached",
+
+  "Metadata" : {
+    "AWS::CloudFormation::Interface" : {
+      "ParameterGroups" : [
+        {
+          "Label" : { "default" : "Notification Emails" },
+          "Parameters" : [ "SelfEmail", "MgrAlarmEmail", "SelfPhoneNumber" ]
+        },
+        {
+          "Label" : { "default" : "Billing Alarms Thresholds ( enter integer USD amount for each )" },
+          "Parameters" : [ "FirstAlarmAmount", "SecondAlarmAmount", "ThirdAlarmAmount" ]
+        }
+      ]
+    }
+  },
+
+  "Parameters" : {
+    "SelfEmail": {
+      "Description": "Enter your email address",
+      "Type": "String",
+      "AllowedPattern": "[-a-zA-Z]+@amazon.(com|jp)",
+      "ConstraintDescription": "Please enter your Amazon email address."
+    },
+    "MgrAlarmEmail": {
+      "Description": "Enter email address of your manager/lead so they can help you manage your AWS bill (note they're only emailed when the Third Alarm is triggered",
+      "Type": "String",
+      "AllowedPattern": "[-a-zA-Z]+@amazon.(com|jp)",
+      "ConstraintDescription": "Please enter another valid Amazon email address"
+    },
+    "SelfPhoneNumber": {
+      "Description": "Enter your phone number in E.164 format at which you wish to receive the notification",
+      "Type": "String",
+      "AllowedPattern": "[+]?[0-9]+",
+      "ConstraintDescription": "Please enter a valid phone number"
+    },
+    "FirstAlarmAmount": {
+      "Default": "100",
+      "Description": "1st) -- Amount above which first alarm email will be sent",
+      "Type": "String",
+      "AllowedPattern": "[1-9][0-9]*",
+      "ConstraintDescription": "Please enter an integer"
+    },
+    "SecondAlarmAmount": {
+      "Default": "500",
+      "Description": "2nd) -- Amount above which second alarm email will be sent",
+      "Type": "String",
+      "AllowedPattern": "[1-9][0-9]*",
+      "ConstraintDescription": "Please enter an integer"
+    },
+    "ThirdAlarmAmount": {
+      "Default": "1000",
+      "Description": "3rd) -- Amount above which third alarm email will be sent (note manager/lead will be included on this alarm)",
+      "Type": "String",
+      "AllowedPattern": "[1-9][0-9]*",
+      "ConstraintDescription": "Please enter an integer"
+    }
+  },
+
+  "Resources" : {
+    "SelfBillingAlarm": {
+      "Type": "AWS::SNS::Topic",
+      "Properties": {
+        "Subscription": [
+          { "Endpoint":
+            { "Ref": "SelfEmail" },
+            "Protocol": "email"
+          },
+          { "Endpoint":
+            { "Ref": "SelfPhoneNumber" },
+            "Protocol": "sms"
+          }
+        ]
+      }
+    },
+    "SelfAndMgrBillingAlarm": {
+      "Type": "AWS::SNS::Topic",
+      "Properties": {
+        "Subscription": [
+          { "Endpoint":
+            { "Ref": "SelfEmail" },
+            "Protocol": "email"
+          },
+          { "Endpoint":
+            { "Ref": "MgrAlarmEmail" },
+            "Protocol": "email"
+          },
+          { "Endpoint":
+            { "Ref": "SelfPhoneNumber" },
+            "Protocol": "sms"
+          }
+        ]
+      }
+    },
+    "FirstSpendingAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": { "Fn::Join": ["", [
+          "Alarm if AWS Spending is over $",
+          { "Ref": "FirstAlarmAmount" }
+        ]]},
+        "Namespace": "AWS/Billing",
+        "MetricName": "EstimatedCharges",
+        "Dimensions": [{
+          "Name": "Currency",
+          "Value" : "USD"
+        }],
+        "Statistic": "Maximum",
+        "Period": "21600",
+        "EvaluationPeriods": "1",
+        "Threshold": { "Ref": "FirstAlarmAmount" },
+        "ComparisonOperator": "GreaterThanThreshold",
+        "AlarmActions": [{
+          "Ref": "SelfBillingAlarm"
+        }],
+        "InsufficientDataActions": [{
+          "Ref": "SelfBillingAlarm"
+        }]
+      }
+    },
+    "SecondSpendingAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": { "Fn::Join": ["", [
+          "Alarm if AWS Spending is over $",
+          { "Ref": "SecondAlarmAmount" }
+        ]]},
+        "Namespace": "AWS/Billing",
+        "MetricName": "EstimatedCharges",
+        "Dimensions": [{
+          "Name": "Currency",
+          "Value" : "USD"
+        }],
+        "Statistic": "Maximum",
+        "Period": "21600",
+        "EvaluationPeriods": "1",
+        "Threshold": { "Ref": "SecondAlarmAmount" },
+        "ComparisonOperator": "GreaterThanThreshold",
+        "AlarmActions": [{
+          "Ref": "SelfBillingAlarm"
+        }],
+        "InsufficientDataActions": [{
+          "Ref": "SelfBillingAlarm"
+        }]
+      }
+    },
+    "ThirdSpendingAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": { "Fn::Join": ["", [
+          "Alarm if AWS Spending is over $",
+          { "Ref": "ThirdAlarmAmount" }
+        ]]},
+        "Namespace": "AWS/Billing",
+        "MetricName": "EstimatedCharges",
+        "Dimensions": [{
+          "Name": "Currency",
+          "Value" : "USD"
+        }],
+        "Statistic": "Maximum",
+        "Period": "21600",
+        "EvaluationPeriods": "1",
+        "Threshold": { "Ref": "ThirdAlarmAmount" },
+        "ComparisonOperator": "GreaterThanThreshold",
+        "AlarmActions": [{
+          "Ref": "SelfAndMgrBillingAlarm"
+        }],
+        "InsufficientDataActions": [{
+          "Ref": "SelfAndMgrBillingAlarm"
+        }]
+      }
+    }
+  },
+
+  "Outputs" : {
+    "LinkToSeeBillingAlarmsURL": {
+      "Description" : "Here's a link to the Console section which will show the billing alarms created",
+      "Value" : "https://console.aws.amazon.com/cloudwatch/home?region=us-east-1#s=Alarms&alarmFilter=ANY"
+    }
+  }
+
+}

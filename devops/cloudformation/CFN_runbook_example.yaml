@@ -1,0 +1,37 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Disable Temp Credentials on Cloud9"  
+
+Resources:
+
+  document: 
+      Type: AWS::SSM::Document
+      Properties:
+        Content:
+          schemaVersion: '0.3'
+          description: 'Run a script on Linux instances.'
+          parameters:
+            AutomationAssumeRole:
+              type: String
+              description: (Optional) The ARN of the role that allows Automation to perform the actions on your behalf.
+              default: ''
+            commands:
+              type: String
+              description: "(Required) The commands to run or the path to an existing script on the instance."
+              default: 'abash /home/ec2-user/environment/tool.sh'
+            InstanceId:
+              type: String
+              description: "(Required) The instance ID you want to run commands on."
+              default: 'i-0ec09422f2064c08c'
+          mainSteps:
+          - name: sayHello
+            action: 'aws:runCommand'
+            inputs:
+              DocumentName: AWS-RunShellScript
+              Parameters:
+                InstanceIds:
+                - '{{InstanceId}}'
+                commands:
+                - "{{ commands }}"
+        DocumentFormat: YAML
+        DocumentType: Automation
+        Name: 'CFN_runbook_example'

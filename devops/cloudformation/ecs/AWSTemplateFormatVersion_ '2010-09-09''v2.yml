@@ -1,0 +1,175 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: This stack will create single farget ecs cluster
+Parameters:
+  EnvironmentParameter:
+    Description: Select the type of environment to create.
+    Type: String
+    Default: Staging
+    AllowedValues: [ Staging, Production ]
+
+  # Task Defination
+  TaskCpu:
+    Description: 'Enter the CPU Power'
+    Type: String
+    AllowedValues: [ 256, 512, 1024, 2048, 4096]
+
+  TaskMemory:
+    Description: 'Enter the Memory Size'
+    Type: String
+    AllowedValues: [ 0.5GB, 1GB, 2GB, 3GB, 4GB, 5GB, 6GB, 7GB, 8GB, 9GB, 10GB, 11GB, 12GB, 13GB, 14GB, 15GB,
+       16GB, 17GB, 18GB, 19GB, 20GB, 21GB, 22GB, 23GB, 24GB, 25GB, 26GB, 27GB, 28GB, 29GB, 30GB ]
+
+  TaskDefinitionFamilyName:
+    Description: Enter the TaskDefinitionFamilyName (Any)
+    Type: String
+    Default: ''
+
+  ContainerName:
+    Description: Enter the container name (Any)
+    Type: String
+    Default: ''
+
+  Image:
+    Description: Enter the our Image name URI
+    Type: String
+    Default: ''
+
+  ContainerPort:
+    Description: Enter the cotainer/app port Our Image is nginx image so that's why here we use nginx default port. we can redirct prot from 80 to 3000 using LoadBalancer
+    Type: Number
+    Default: 3000
+
+  HTTPPort:
+    Type: Number
+    Default: 80
+
+  ContainerSecurityGroup:
+    Description: Select the Container Security GroupID to Create ECS Service
+    Type: AWS::EC2::SecurityGroup::Id
+
+  MinContainers:
+    Type: Number
+    Default: 1
+
+  MaxContainers:
+    Type: Number
+    Default: 2
+
+  EnvironmentValue:
+    Type: String
+    Description: Enter the ARN of Secret Manager here.
+    Default: ""
+
+Resources:
+  # ECS Task Role 
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+      Path: /
+      Policies:
+        - PolicyName: TCGAmazonECSTaskRolePolicy
+          PolicyDocument:
+            Statement:
+              Action:
+                - 'ses:SendEmail'
+                - 's3:*'
+              Effect: Allow
+              Resource: '*'
+          
+  # ECS Task Excution Role
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: [ecs-tasks.amazonaws.com]
+          Action: ['sts:AssumeRole']
+      Path: /
+      Policies:
+        - PolicyName: TCGAmazonECSTaskExecutionRolePolicy
+          PolicyDocument:
+            Statement:
+            - Effect: Allow
+              Action:
+                # ECS Tasks to download images from ECR
+                - 'ecr:GetAuthorizationToken'
+                - 'ecr:BatchCheckLayerAvailability'
+                - 'ecr:GetDownloadUrlForLayer'
+                - 'ecr:BatchGetImage'
+                # ECS tasks to upload logs to CloudWatch
+                - 'logs:CreateLogStream'
+                - 'logs:PutLogEvents'
+                - 's3:*'
+              Resource: '*'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: TCGAttechSecretToECSRolePolicy
+          PolicyDocument:
+            Statement:
+            - Effect: Allow
+              Action:
+                - 'ssm:GetParameters'
+                - 'secretsmanager:GetSecretValue'
+                - 'kms:Decrypt'
+              Resource: 
+                - 'arn:aws:secretsmanager:ap-southeast-1:845847047647:secret:tcg-backend-prod-ScPxVM'
+                - 'arn:aws:kms:ap-southeast-1:845847047647:key/e17b6597-bcd8-4c6c-9980-87294866fb8d'
+              
+  # Task Definition
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Ref TaskDefinitionFamilyName
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      ExecutionRoleArn: !Ref ECSTaskExecutionRole
+      TaskRoleArn: !Ref ECSTaskRole
+      ContainerDefinitions:
+        - Name: !Ref ContainerName
+          Image: !Ref Image
+          Secrets:
+            - Name: tcg-backend-prod
+              ValueFrom: !Ref EnvironmentValue
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+              Protocol: tcp    # capitalized
+          Essential: true        # capitalized
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-region: !Ref AWS::Region
+              awslogs-group: !Join [ '/', [ '/ecs' , !Ref TaskDefinitionFamilyName ] ]
+              awslogs-stream-prefix: ecs
+  
+  CloudWatchLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join [ '/', [ '/ecs' , !Ref TaskDefinitionFamilyName ] ]
+      RetentionInDays: 14
+
+Outputs:
+
+  # ECS Task Role && ECS Task Excution Role
+  ECSTaskRole:
+    Value: !GetAtt 'ECSTaskRole.Arn'
+    
+  ECSTaskExecutionRole:
+    Value: !GetAtt 'ECSTaskExecutionRole.Arn'
+
+  TaskDefinition:
+    Value: !Ref TaskDefinition
+    Export:
+      Name: !Sub '${AWS::StackName}-TaskDefinition'
+
