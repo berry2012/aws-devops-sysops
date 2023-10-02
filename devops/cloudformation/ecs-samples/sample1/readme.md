@@ -2,11 +2,12 @@
 
 ## Set Environment Variables
 
-SECRET_ARN=arn:aws:secretsmanager:eu-west-1:520817024429:secret:sec-prod-mgmt/domain/database-pSoPZf
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+SECRET_ARN=arn:aws:secretsmanager:eu-west-1:${ACCOUNT_ID}:secret:sec-prod-mgmt/domain/database-pSoPZf
 ENVIRONMENT_NAME=demo
 AWS_DEFAULT_REGION=eu-west-1
 APP_IMAGE_NAME=nginx
-CERTIFICATE_ARN=arn:aws:acm:eu-west-1:520817024429:certificate/fcc58e38-dbf0-4f55-9d0e-955da11d2da0
+CERTIFICATE_ARN=arn:aws:acm:eu-west-1:${ACCOUNT_ID}:certificate/fcc58e38-dbf0-4f55-9d0e-955da11d2da0
 KEY_PAIR_NAME=aws-wale.pem
 
 chmod +x ecs-cluster.sh  ecs-service.sh  

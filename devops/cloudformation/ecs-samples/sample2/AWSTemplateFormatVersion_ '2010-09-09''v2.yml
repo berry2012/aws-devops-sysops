@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: This stack will create single farget ecs cluster
+Description: This stack will create single fargete ecs cluster in an existing default VPC 
 Parameters:
   EnvironmentParameter:
     Description: Select the type of environment to create.
