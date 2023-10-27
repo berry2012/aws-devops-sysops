@@ -49,8 +49,7 @@ Resources:
             Principal:
               Service: ecs-tasks.amazonaws.com
       ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
-        - 'arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceRole'
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
 
   LogGroup:
     Type: AWS::Logs::LogGroup
@@ -109,7 +108,6 @@ Resources:
       Cluster: !Ref Cluster
       DesiredCount: !Ref DesiredCount
       TaskDefinition: !Ref TaskDefinition
-      EnableExecuteCommand: true
       LaunchType: EC2
       LoadBalancers:
         - ContainerName: simple-app
@@ -126,8 +124,8 @@ Resources:
       Cpu: 256
       NetworkMode: !If [ Fargate, "awsvpc", "bridge" ]
       # ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
-      ExecutionRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskRole
-      TaskRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskRole    
+      ExecutionRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskRole 
+      TaskRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskRole 
       ContainerDefinitions:
         - Name: simple-app
           Image: amazon/amazon-ecs-sample

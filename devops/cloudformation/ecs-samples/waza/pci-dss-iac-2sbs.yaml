@@ -1,0 +1,100 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+
+
+Description: >
+  This template deploy VPC, Amazon Elastic Container Service
+  (Amazon ECS) using clusters powered by AWS Fargate, LB and sample service.
+
+Parameters:
+  LaunchType:
+    Type: String
+    Default: Fargate
+    AllowedValues:
+      - Fargate
+      - EC2
+    Description: >
+      The launch type for your service. Selecting EC2 will create an Auto
+      Scaling group of t2.micro instances for your cluster. See
+      https://docs.aws.amazon.com/AmazonECS/latest/developerguide/launch_types.html
+      to learn more about launch types.
+
+  TemplateBucket:
+    Type: String
+    Default: pcidss-cf-iac
+    Description: >
+      The S3 bucket from which to fetch the templates used by this stack.
+
+  SampleServiceName:
+    Type: String
+    Default: sample
+    Description: >
+      Name for the sample Service that will be deployed.
+
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterLabels:
+      LaunchType:
+        default: "Launch Type"
+    ParameterGroups:
+      - Label:
+          default: Cluster Configuration
+        Parameters:
+          - LaunchType
+      - Label:
+          default: Stack Configuration
+        Parameters:
+          - TemplateBucket
+
+
+Resources:
+  Cluster:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://s3.amazonaws.com/${TemplateBucket}/templates-sbs/ecs-cluster.yaml"
+      Parameters:
+        LaunchType: !Ref LaunchType
+        SourceSecurityGroup: !GetAtt LoadBalancer.Outputs.SecurityGroup
+        Subnets: !GetAtt VPC.Outputs.Subnets
+        PrivateSubnets: !GetAtt VPC.Outputs.PrivateSubnets        
+        VpcId: !GetAtt VPC.Outputs.VpcId
+
+  LoadBalancer:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://s3.amazonaws.com/${TemplateBucket}/templates-sbs/load-balancer.yaml"
+      Parameters:
+        LaunchType: !Ref LaunchType
+        PublicSubnets: !GetAtt VPC.Outputs.PublicSubnets
+        VpcId: !GetAtt VPC.Outputs.VpcId
+
+  VPC:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://s3.amazonaws.com/${TemplateBucket}/templates-sbs/vpc.yaml"
+      Parameters:
+        Name: !Ref AWS::StackName
+        VpcCIDR: 10.0.0.0/16
+        PublicSubnet1CIDR: 10.0.0.0/24
+        PublicSubnet2CIDR: 10.0.1.0/24
+        PrivateSubnet1CIDR: 10.0.3.0/24
+        PrivateSubnet2CIDR: 10.0.4.0/24
+
+  Service:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://s3.amazonaws.com/${TemplateBucket}/templates-sbs/service.yaml"
+      Parameters:
+        Cluster: !GetAtt Cluster.Outputs.ClusterName
+        LaunchType: !Ref LaunchType
+        TargetGroup: !GetAtt LoadBalancer.Outputs.TargetGroup
+        SourceSecurityGroup: !GetAtt LoadBalancer.Outputs.SecurityGroup
+        PrivateSubnets: !GetAtt VPC.Outputs.PrivateSubnets
+        ServiceName: !Ref SampleServiceName
+
+Outputs:
+  ServiceUrl:
+    Description: The sample service that is being continuously deployed.
+    Value: !GetAtt LoadBalancer.Outputs.ServiceUrl
+
