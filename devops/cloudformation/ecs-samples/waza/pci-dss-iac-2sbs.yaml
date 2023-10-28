@@ -79,11 +79,12 @@ Resources:
         PublicSubnet1CIDR: 10.0.0.0/24
         PublicSubnet2CIDR: 10.0.1.0/24
         PrivateSubnet1CIDR: 10.0.3.0/24
-        PrivateSubnet2CIDR: 10.0.4.0/24
+        PrivateSubnet2CIDR: 10.0.4.0/24s
 
   Service:
     Type: AWS::CloudFormation::Stack
     Properties:
+      # TemplateURL: templates-sbs/service.yaml
       TemplateURL: !Sub "https://s3.amazonaws.com/${TemplateBucket}/templates-sbs/service.yaml"
       Parameters:
         Cluster: !GetAtt Cluster.Outputs.ClusterName

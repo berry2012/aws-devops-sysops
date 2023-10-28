@@ -20,9 +20,6 @@ Parameters:
   PrivateSubnet2CIDR:
     Type: String
 
-
-
-
 Resources:
   VPC:
     Type: AWS::EC2::VPC
