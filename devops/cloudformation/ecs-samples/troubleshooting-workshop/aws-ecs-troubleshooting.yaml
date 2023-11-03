@@ -1,7 +1,7 @@
 ---
 AWSTemplateFormatVersion: 2010-09-09
 Description: >
-  This template deploy VPC, Amazon Elastic Container Service
+  Amazon ECS Troubleshooting Workshop. This template deploy VPC, Amazon Elastic Container Service
   (Amazon ECS) using clusters powered by AWS Fargate and EC2, LB and sample services.
 
 Parameters:
@@ -98,6 +98,7 @@ Resources:
       VpcId:
         Ref: VPC
       CidrBlock: !Ref PublicSubnet1CIDR
+      MapPublicIpOnLaunch: true
       AvailabilityZone: !Select [ 0, !GetAZs ]
       Tags:
       - Key: Network
@@ -111,6 +112,7 @@ Resources:
       VpcId:
         Ref: VPC
       CidrBlock: !Ref PublicSubnet2CIDR
+      MapPublicIpOnLaunch: true
       AvailabilityZone: !Select [ 1, !GetAZs ]
       Tags:
       - Key: Name
@@ -505,8 +507,33 @@ Resources:
         - Name: containerInsights
           Value: enabled
       Tags:
-        - Key: purpose
-          Value: troubleshooting               
+        - Key: Purpose
+          Value: Troubleshooting               
+
+  CapacityProviderCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: ECSTroubleshootingAdv
+      CapacityProviders:
+        - FARGATE
+        - FARGATE_SPOT
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE
+          Weight: 1
+        - CapacityProvider: FARGATE_SPOT
+          Weight: 1      
+      Configuration:
+        ExecuteCommandConfiguration:
+            Logging: DEFAULT   
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Tags:
+        - Key: Purpose
+          Value: AdvTroubleshooting  
+        - Key: Session
+          Value: Advanced
+
 
   AutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
@@ -523,6 +550,9 @@ Resources:
         - Key: Name
           Value: ECSTroubleshooting
           PropagateAtLaunch: true
+        - Key: Purpose
+          Value: Troubleshooting
+          PropagateAtLaunch: true          
     CreationPolicy:
       ResourceSignal:
         Timeout: PT15M
@@ -607,13 +637,10 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
         - arn:aws:iam::aws:policy/SecretsManagerReadWrite
         - arn:aws:iam::aws:policy/CloudWatchFullAccess
-        - arn:aws:iam::aws:policy/AmazonSSMReadOnlyAccess
         - arn:aws:iam::aws:policy/AmazonS3FullAccess
         - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
-        - arn:aws:iam::aws:policy/AWSAppMeshPreviewEnvoyAccess
-        - arn:aws:iam::aws:policy/AWSAppMeshEnvoyAccess
       Policies:
-        - PolicyName: sensitive-secret-ecs
+        - PolicyName: ssm-sensitive-secret-ecs
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -622,7 +649,16 @@ Resources:
                 Resource: '*'   
               - Effect: Allow
                 Action: 'kms:Decrypt'
-                Resource: '*'                   
+                Resource: '*'       
+              - Effect: Allow
+                Action: 'ssmmessages:*'
+                Resource: '*'  
+              - Effect: Allow
+                Action: 'ssm:*'
+                Resource: '*'        
+              - Effect: Allow
+                Action: 'ecr-public:*'
+                Resource: '*'                                                                 
 
   LogGroup:
     Type: AWS::Logs::LogGroup
@@ -633,7 +669,7 @@ Resources:
   TestSecret:
     Type: 'AWS::SecretsManager::Secret'
     Properties:
-      Name: some-token
+      Name: my-token
       Description: "This secret has a dynamically generated secret password."
       GenerateSecretString:
         SecretStringTemplate: '{"username": "test-user"}'
@@ -643,7 +679,7 @@ Resources:
       Tags:
         -
           Key: Purpose
-          Value: ECS Troubleshooting Workshop
+          Value: Troubleshooting
 
   FargateTaskDefinition:
     Type: AWS::ECS::TaskDefinition
@@ -651,53 +687,62 @@ Resources:
       Family: fargate-simple-app
       RequiresCompatibilities:
         - "FARGATE"
-      Memory: 3 GB
-      Cpu: 1 vCPU
+      Memory: 512
+      Cpu: 256
       NetworkMode: "awsvpc"
       ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
       TaskRoleArn: !GetAtt TaskExecutionRole.Arn
       ContainerDefinitions:
         - Name: simple-app
-          Image: amazon/amazon-ecs-sample
-          EntryPoint:
-            - /usr/sbin/apache2
-            - -D
-            - FOREGROUND
+          Image: nginx:latest
           Essential: true
           LinuxParameters: 
             InitProcessEnabled: true          
-          Memory: 512
+          HealthCheck:
+              Command:
+                  - "CMD-SHELL"
+                  - "curl -f http://localhost/ || exit 1"
+              Interval: 5
+              Retries: 2
+              Timeout: 3          
           MountPoints:
             - SourceVolume: my-vol
-              ContainerPath: /var/www/my-vol
+              ContainerPath: /usr/share/nginx/html
           PortMappings:
             - ContainerPort: 80
           LogConfiguration:
             LogDriver: awslogs
             Options:
-              awslogs-region: !Ref AWS::Region
+              awslogs-region: !Ref 'AWS::Region'
               awslogs-group: !Ref LogGroup
-              awslogs-stream-prefix: simple-app
+              awslogs-stream-prefix: ecs
         - Name: busybox
           Image: busybox
           EntryPoint:
             - sh
             - -c
           Essential: true
-          Memory: 256
           LogConfiguration:
             LogDriver: awslogs
             Options:
-              awslogs-region: !Ref AWS::Region
+              awslogs-region: !Ref 'AWS::Region'
               awslogs-group: !Ref LogGroup
-              awslogs-stream-prefix: busybox        
+              awslogs-stream-prefix: ecs        
           Environment:
             - Name: 'PROJECT'
               Value: "ECS TROUBLESHOOTING"     
           VolumesFrom:
             - SourceContainer: simple-app
           Command:
-            - /bin/sh -c "while true; do /bin/date > /var/www/my-vol/date; echo $PROJECT > /var/www/my-vol/variable.txt; sleep 600; done"
+            - >-
+              /bin/sh -c "while true; do echo '<html> <head> <title>Amazon ECS
+              Sample App</title> <style>body {margin-top: 40px;
+              background-color: #333;} </style> </head><body> <div
+              style=color:white;text-align:center> <h1>Amazon ECS Sample
+              App</h1> <h2>Congratulations!</h2> <p>Your application is now
+              running on a container in Amazon ECS.</p>' > top; /bin/date > date
+              ; echo '</div></body></html>' > bottom; cat top date bottom >
+              /usr/share/nginx/html/index.html ; echo $PROJECT > /usr/share/nginx/html/variable.html; sleep 10; done"
       Volumes:
         - Name: my-vol
 
@@ -718,6 +763,37 @@ Resources:
           Subnets: 
             - !Ref PublicSubnet1
             - !Ref PublicSubnet2
+      Tags: 
+        - Key: Name
+          Value: ECSTroubleshooting
+        - Key: Purpose
+          Value: Troubleshooting
+      PropagateTags: SERVICE
+
+  AdvFargateService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref CapacityProviderCluster
+      ServiceName: frontend-app
+      DesiredCount: 1
+      TaskDefinition: !Ref FargateTaskDefinition
+      EnableExecuteCommand: true
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref ECSServiceSecurityGroup
+          Subnets: 
+            - !Ref PublicSubnet1
+            - !Ref PublicSubnet2
+      Tags: 
+        - Key: Name
+          Value: AdvECSTroubleshooting
+        - Key: Purpose
+          Value: AdvTroubleshooting
+      PropagateTags: SERVICE
+
 
   EC2TaskDefinition:
     Type: AWS::ECS::TaskDefinition
@@ -740,6 +816,13 @@ Resources:
           LinuxParameters: 
             InitProcessEnabled: true
           Memory: 512
+          HealthCheck:
+              Command:
+                  - "CMD-SHELL"
+                  - "curl -f http://localhost/ || exit 1"
+              Interval: 5
+              Retries: 2
+              Timeout: 3              
           MountPoints:
             - SourceVolume: my-vol
               ContainerPath: /var/www/my-vol
@@ -750,7 +833,7 @@ Resources:
             Options:
               awslogs-region: !Ref AWS::Region
               awslogs-group: !Ref LogGroup
-              awslogs-stream-prefix: ec2-simple-app
+              awslogs-stream-prefix: ecs
         - Name: busybox-ec2
           Image: busybox
           EntryPoint:
@@ -758,22 +841,29 @@ Resources:
             - -c
           Essential: true
           Memory: 256
+          HealthCheck:
+              Command:
+                  - "CMD-SHELL"
+                  - "echo hello"
+              Interval: 5
+              Retries: 2
+              Timeout: 3            
           LogConfiguration:
             LogDriver: awslogs
             Options:
               awslogs-region: !Ref AWS::Region
               awslogs-group: !Ref LogGroup
-              awslogs-stream-prefix: busybox-ec2        
+              awslogs-stream-prefix: ecs        
           Environment:
             - Name: 'PROJECT'
               Value: "ECS TROUBLESHOOTING"
           Secrets:
             - Name: 'some_token'
-              ValueFrom: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:some-token'          
+              ValueFrom: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:my-token'          
           VolumesFrom:
             - SourceContainer: simple-app-ec2
           Command:
-            - /bin/sh -c "while true; do /bin/date > /var/www/my-vol/date; echo $PROJECT > /var/www/my-vol/variable.txt; sleep 600; done"
+            - /bin/sh -c "while true; do /bin/date > /var/www/my-vol/date; echo $PROJECT > /var/www/my-vol/variable.txt; sleep 10; done"
       Volumes:
         - Name: my-vol
 
@@ -792,6 +882,12 @@ Resources:
         - ContainerName: simple-app-ec2
           ContainerPort: 80
           TargetGroupArn: !Ref EC2ServiceTargetGroup
+      Tags: 
+        - Key: Name
+          Value: ECSTroubleshooting
+        - Key: Purpose
+          Value: Troubleshooting
+      PropagateTags: SERVICE
 
   LoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -801,6 +897,11 @@ Resources:
         - !Ref PublicSubnet2        
       SecurityGroups:
         - !Ref LBSecurityGroup
+      Tags: 
+        - Key: Name
+          Value: ECSTroubleshooting
+        - Key: Purpose
+          Value: Troubleshooting        
 
   EC2ServiceLoadBalancerListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
@@ -844,75 +945,440 @@ Resources:
         - TargetGroupArn: !Ref EC2ServiceTargetGroup
           Type: forward
 
-  # FargateServiceLoadBalancer:
-  #   Type: AWS::ElasticLoadBalancingV2::LoadBalancer
-  #   Properties:
-  #     Subnets: 
-  #       - !Ref PublicSubnet1
-  #       - !Ref PublicSubnet2        
-  #     SecurityGroups:
-  #       - !Ref LBSecurityGroup
 
-  # FargateServiceLoadBalancerListener:
-  #   Type: AWS::ElasticLoadBalancingV2::Listener
-  #   DependsOn: FargateServiceLoadBalancer    
-  #   Properties:
-  #     LoadBalancerArn: !Ref FargateServiceLoadBalancer
-  #     Port: 80
-  #     Protocol: HTTP
-  #     DefaultActions:
-  #       - Type: forward
-  #         TargetGroupArn: !Ref FargateServiceTargetGroup
+  FgTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: fg-task
+      RequiresCompatibilities:
+        - "FARGATE"
+      Memory: 512
+      Cpu: 256
+      NetworkMode: "awsvpc"
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: fg-task
+          Image: amazon/amazon-ecs-sample
+          EntryPoint:
+            - /usr/sbin/apache2
+            - -D
+            - FOREGROUND
+          Essential: true
+          HealthCheck:
+              Command:
+                  - "CMD-SHELL"
+                  - "curl -f http://localhost/ || exit 1"
+              Interval: 5
+              Retries: 2
+              Timeout: 3             
+          LinuxParameters: 
+            InitProcessEnabled: true          
+          PortMappings:
+            - ContainerPort: 80
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-region: !Ref AWS::Region
+              awslogs-group: !Ref LogGroup
+              awslogs-stream-prefix: ecs
+          Environment:
+            - Name: 'PROJECT'
+              Value: "WORKSHOP EVENT"     
 
-  # FargateServiceTargetGroup:
-  #   Type: AWS::ElasticLoadBalancingV2::TargetGroup
-  #   DependsOn: FargateServiceLoadBalancer
-  #   Properties:
-  #     VpcId: !Ref VPC
-  #     Port: 80
-  #     Protocol: HTTP
-  #     Matcher:
-  #       HttpCode: 200-299
-  #     HealthCheckIntervalSeconds: 10
-  #     HealthCheckPath: /
-  #     HealthCheckProtocol: HTTP
-  #     HealthCheckTimeoutSeconds: 5
-  #     HealthyThresholdCount: 2
-  #     TargetType: "ip"
-  #     TargetGroupAttributes:
-  #       - Key: deregistration_delay.timeout_seconds
-  #         Value: 30
+  ScheduledTaskDefinition:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      Family: 'scheduled-task'
+      RequiresCompatibilities:
+        - "FARGATE"
+      Memory: 512
+      Cpu: 256      
+      ContainerDefinitions:
+        - Name: scheduled-app
+          Essential: 'true'
+          HealthCheck:
+              Command:
+                  - "CMD-SHELL"
+                  - "curl -f http://localhost/ || exit 1"
+              Interval: 5
+              Retries: 2
+              Timeout: 3            
+          LinuxParameters: 
+            InitProcessEnabled: true            
+          Image: 'httpd:2.4'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: ecs
+          MountPoints:
+            - ContainerPath: /usr/local/apache2/htdocs
+              SourceVolume: my-vol
+          PortMappings:
+            - ContainerPort: 80
+        - Name: busybox
+          Cpu: 10
+          Command:
+            - >-
+              /bin/sh -c "while true; do echo '<html> <head> <title>Amazon ECS
+              Scheduled Sample App</title> <style>body {margin-top: 40px;
+              background-color: #333;} </style> </head><body> <div
+              style=color:white;text-align:center> <h1>Amazon ECS Sample
+              App with Scheduled Task</h1> <h2>Congratulations!</h2> <p>Your application is now
+              running on a container in Amazon ECS Scheduled Task.</p>' > top; /bin/date > date
+              ; echo '</div></body></html>' > bottom; cat top date bottom >
+              /usr/local/apache2/htdocs/index.html ; sleep 1; done"
+          EntryPoint:
+            - sh
+            - '-c'
+          Essential: false
+          LinuxParameters: 
+            InitProcessEnabled: true           
+          HealthCheck:
+              Command:
+                  - "CMD-SHELL"
+                  - "echo Alive"
+              Interval: 5
+              Retries: 2
+              Timeout: 3           
+          Image: busybox
+          Memory: 200
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: ecs
+          VolumesFrom:
+            - SourceContainer: scheduled-app
+      Volumes:
+        - Name: my-vol
 
-  # ListenerRule:
-  #   Type: AWS::ElasticLoadBalancingV2::ListenerRule
-  #   Properties:
-  #     ListenerArn: !Ref FargateServiceLoadBalancerListener
-  #     Priority: 1
-  #     Conditions:
-  #       - Field: path-pattern
-  #         Values:
-  #           - /
-  #     Actions:
-  #       - TargetGroupArn: !Ref FargateServiceTargetGroup
-  #         Type: forward
+  TaskSchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "events.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: /
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Effect: "Allow"
+                Action: "ecs:*"
+                Resource: "*"
+              - Effect: "Allow"
+                Action:
+                  - "iam:ListInstanceProfiles"
+                  - "iam:ListRoles"
+                  - "iam:PassRole"
+                Resource: "*"
+          PolicyName: "TaskSchedulerPolicy"
+
+  FgTaskScheduleRule:
+      Type: AWS::Events::Rule
+      Properties:
+        Description: "Schedule a Fargate Task every 15 minutes"
+        Name: scheduledfgtask
+        State: ENABLED
+        ScheduleExpression: "rate(15 minutes)"
+        Targets:
+          - Arn: !GetAtt Cluster.Arn
+            Id: "ScheduledTask"
+            RoleArn: !GetAtt TaskSchedulerRole.Arn
+            EcsParameters:
+              TaskDefinitionArn: !Ref ScheduledTaskDefinition
+              TaskCount: 1
+              EnableExecuteCommand: true
+              LaunchType: FARGATE
+              NetworkConfiguration:
+                AwsVpcConfiguration:
+                  AssignPublicIp: ENABLED
+                  SecurityGroups:
+                    - !Ref ECSServiceSecurityGroup
+                  Subnets:
+                    - !Ref PublicSubnet1
+                    - !Ref PublicSubnet2
+
+  NoExecTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: no-ecs-exec-task
+      RequiresCompatibilities:
+        - "FARGATE"
+      Memory: 512
+      Cpu: 256
+      NetworkMode: "awsvpc"
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: no-ecs-exec-task
+          Image: amazon/amazon-ecs-sample
+          EntryPoint:
+            - /usr/sbin/apache2
+            - -D
+            - FOREGROUND
+          Essential: true
+          PortMappings:
+            - ContainerPort: 80
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-region: !Ref AWS::Region
+              awslogs-group: !Ref LogGroup
+              awslogs-stream-prefix: ecs
+          Environment:
+            - Name: 'PROJECT'
+              Value: "WORKSHOP EVENT"  
+
+  ECSTaskLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          Effect: Allow
+          Principal:
+            Service: !Sub lambda.${AWS::URLSuffix}
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy      
+      Policies:
+        - PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:*
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource: "*"
+          PolicyName: RunECSTask-Lambda-Policy
+
+  RunTaskFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: FargateTaskDefinition
+    Properties:
+      Role: !GetAtt ECSTaskLambdaRole.Arn
+      Runtime: python3.11
+      Handler: index.handler
+      Timeout: 300
+      Code:
+        ZipFile: |
+          import cfnresponse
+          import boto3
+          import json
+
+          def handler(event, context):
+              print("REQUEST RECEIVED: \n" + json.dumps(event))          
+              if event['RequestType'] == 'Delete':   
+                  print("## STOPPING ALL TASKS")   
+                  client = boto3.client("ecs")
+                  paginator = client.get_paginator('list_tasks')
+                  response_iterator = paginator.paginate(
+                      cluster=event['ResourceProperties']['ECSCluster'],
+                      PaginationConfig={
+                          'PageSize':100
+                      }
+                  )
+                  for each_page in response_iterator:
+                      for each_task in each_page['taskArns']:
+                          response = client.stop_task(cluster=event['ResourceProperties']['ECSCluster'], task=each_task, reason='Workshop Clean Up')
+                          # print(json.dumps(response, indent=4, default=str))
+                          print("Cleaned Up Task: ", each_task)
+
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                  return
+
+              try:
+                  client = boto3.client('ecs')
+                  response = client.run_task(
+                  cluster=event['ResourceProperties']['ECSCluster'], 
+                  launchType = 'FARGATE',
+                  enableExecuteCommand=True,
+                  group='standaloneexectask',
+                  taskDefinition='fg-task', 
+                  count = 1,
+                  propagateTags='TASK_DEFINITION',
+                  tags=[
+                      {
+                          'key': 'Purpose',
+                          'value': 'Troubleshooting'
+                      },
+                  ],
+                  platformVersion='LATEST',
+                  networkConfiguration={
+                        'awsvpcConfiguration': {
+                            'subnets': [
+                                event['ResourceProperties']['Subnet1'], 
+                                event['ResourceProperties']['Subnet2'] 
+                            ],
+                            'assignPublicIp': 'ENABLED',
+                            'securityGroups': [
+                              event['ResourceProperties']['SecurityGroup']
+                            ]
+                        }
+                    })
+                  #  return str(response)
+                  taskarn = response['tasks'][0]['taskArn']
+                  print("Task ARN is " + taskarn)
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {
+                      'Task': taskarn
+                  })
+                  return               
+                                   
+              except Exception as err:
+                  print(err)
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {})                      
+
+  RunTaskFunctionCustomResource:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt RunTaskFunction.Arn
+      Subnet1: !Ref PublicSubnet1
+      Subnet2: !Ref PublicSubnet2
+      SecurityGroup: !Ref ECSServiceSecurityGroup
+      ECSCluster: !Ref Cluster
+
+
+  RunNoExecTaskFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: NoExecTaskDefinition
+    Properties:
+      Role: !GetAtt ECSTaskLambdaRole.Arn
+      Runtime: python3.11
+      Handler: index.handler
+      Timeout: 300
+      Code:
+        ZipFile: |
+          import cfnresponse
+          import boto3
+          import json
+
+          def handler(event, context):
+              print("REQUEST RECEIVED: \n" + json.dumps(event))          
+              if event['RequestType'] == 'Delete':   
+                  print("## STOPPING ALL TASKS")   
+                  client = boto3.client("ecs")
+                  paginator = client.get_paginator('list_tasks')
+                  response_iterator = paginator.paginate(
+                      cluster=event['ResourceProperties']['ECSCluster'],
+                      PaginationConfig={
+                          'PageSize':100
+                      }
+                  )
+                  for each_page in response_iterator:
+                      for each_task in each_page['taskArns']:
+                          response = client.stop_task(cluster=event['ResourceProperties']['ECSCluster'], task=each_task, reason='Workshop Clean Up')
+                          # print(json.dumps(response, indent=4, default=str))
+                          print("Cleaned Up Task: ", each_task)
+
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                  return
+
+              try:
+                  client = boto3.client('ecs')
+                  response = client.run_task(
+                  cluster=event['ResourceProperties']['ECSCluster'], 
+                  launchType = 'FARGATE',
+                  group='standalonenoexectask',
+                  taskDefinition='no-ecs-exec-task', 
+                  count = 1,
+                  propagateTags='TASK_DEFINITION',
+                  tags=[
+                      {
+                          'key': 'Purpose',
+                          'value': 'Troubleshooting'
+                      },
+                  ],
+                  platformVersion='LATEST',
+                  networkConfiguration={
+                        'awsvpcConfiguration': {
+                            'subnets': [
+                                event['ResourceProperties']['Subnet1'], 
+                                event['ResourceProperties']['Subnet2'] 
+                            ],
+                            'assignPublicIp': 'ENABLED',
+                            'securityGroups': [
+                              event['ResourceProperties']['SecurityGroup']
+                            ]
+                        }
+                    })
+                  #  return str(response)
+                  taskarn = response['tasks'][0]['taskArn']
+                  print("Task ARN is " + taskarn)
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {
+                      'Task': taskarn
+                  })
+                  return               
+                                   
+              except Exception as err:
+                  print(err)
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {})                      
+
+  RunNoExecTaskFunctionCustomResource:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt RunNoExecTaskFunction.Arn
+      Subnet1: !Ref PublicSubnet1
+      Subnet2: !Ref PublicSubnet2
+      SecurityGroup: !Ref ECSServiceSecurityGroup
+      ECSCluster: !Ref Cluster
+
 
 Outputs:
-
   ClusterName:
-      Value: !Ref Cluster
+    Value: !Ref Cluster
+    Export:
+      Name: MainCluster
 
-  Subnets:
-    Value: !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PrivateSubnet1, !Ref PrivateSubnet2 ] ]
-
-  VpcId:
-    Value: !Ref VPC
-
-  PublicSubnets:
-    Value: !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2 ] ]
-
-  PrivateSubnets:
-    Value: !Join [ ",", [ !Ref PrivateSubnet1, !Ref PrivateSubnet2 ] ]
+  AdvClusterName:
+    Value: !Ref CapacityProviderCluster
+    Export:
+      Name: 'AdvancedCluster'
 
   EC2ServiceUrl:
     Description: URL of the load balancer for the sample service deployed to EC2.
     Value: !Sub http://${LoadBalancer.DNSName}
+
+  VPC:
+    Description: 'VPC'
+    Value: !Ref VPC
+    Export:
+      Name: vpcId
+
+  PrivateSubnet1:
+    Description: 'Private Subnet 1'
+    Value: !Ref PrivateSubnet1
+    Export:
+      Name: PrivateSubnet1
+
+  PublicSubnet1:
+    Description: 'Public Subnet 1'
+    Value: !Ref PublicSubnet1
+    Export:
+      Name: PublicSubnet1
+
+  StandaloneExecTaskArn:
+    Description: 'Standalone ECS Exec Task Arn'
+    Value: !GetAtt RunTaskFunctionCustomResource.Task
+    Export:
+      Name: StandaloneExecTaskArn  
+
+  StandaloneNoExecTaskArn:
+    Description: 'Standalone Non ECS Exec Task Arn'
+    Value: !GetAtt RunNoExecTaskFunctionCustomResource.Task
+    Export:
+      Name: StandaloneNoExecTaskArn       
