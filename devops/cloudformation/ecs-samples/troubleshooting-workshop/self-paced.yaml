@@ -6,11 +6,6 @@ Description: >
 
 Parameters:
 
-  EETeamRoleArn:
-    Type: String
-    Default: "YourIsengardArn"
-    Description: The Arn to be assumed by Workshop participants.
-
   VpcCIDR:
     Type: String
     Default: 10.0.0.0/16
@@ -361,21 +356,6 @@ Resources:
       AutomaticStopTimeMinutes: 60
       SubnetId: !Ref PublicSubnet1
       ImageId: resolve:ssm:/aws/service/cloud9/amis/amazonlinux-2-x86_64
-      OwnerArn: !Join
-        - ":"
-        - - arn
-          - !Ref AWS::Partition
-          - sts
-          - ""
-          - !Select [4, !Split [":", !Ref EETeamRoleArn]]
-          - !Join
-            - "/"
-            - - assumed-role
-              - !Select [
-                  1,
-                  !Split ["/", !Select [5, !Split [":", !Ref EETeamRoleArn]]],
-                ]
-              - eoalola-Isengard    
 
   Cloud9InstanceRole:
     Type: AWS::IAM::Role
@@ -530,14 +510,13 @@ Resources:
           Value: enabled
       Tags:
         - Key: Purpose
-          Value: AdvTroubleshooting  
+          Value: Troubleshooting  
         - Key: Session
           Value: Advanced
 
 
   AutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
-    # Condition: EC2
     Properties:
       VPCZoneIdentifier: 
       - !Ref PrivateSubnet1
@@ -565,7 +544,6 @@ Resources:
 
   LaunchConfiguration:
     Type: AWS::AutoScaling::LaunchConfiguration
-    # Condition: EC2
     Metadata:
       AWS::CloudFormation::Init:
         config:
@@ -1000,13 +978,6 @@ Resources:
       ContainerDefinitions:
         - Name: scheduled-app
           Essential: 'true'
-          HealthCheck:
-              Command:
-                  - "CMD-SHELL"
-                  - "curl -f http://localhost/ || exit 1"
-              Interval: 5
-              Retries: 2
-              Timeout: 3            
           LinuxParameters: 
             InitProcessEnabled: true            
           Image: 'httpd:2.4'
