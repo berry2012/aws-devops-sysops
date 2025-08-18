@@ -12,7 +12,9 @@ python3 update_lambda_runtime.py --regions us-east-1 eu-west-1 --profile prod --
 
 ```bash
 python3 update_lambda_runtime.py --regions us-east-1 --profile prod --report update_report.json
-or 
+```
+
+```bash
 python3 update_lambda_runtime.py --regions us-east-1 eu-west-1 ap-southeast-1 eu-west-2 us-west-2 --profile staging --dry-run --report update_report.json
 ```
 
