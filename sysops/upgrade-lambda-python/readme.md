@@ -2,6 +2,13 @@
 
 For more information about this deprecation, read the [article](https://repost.aws/articles/ARRCAyrRH9TTGsKWasFzdbdw/automated-migration-script-for-aws-lambda-python-3-9-end-of-support)
 
+## Prerequisites:
+
+- Install and configure the latest version of the AWS Command Line Interface (AWS CLI).
+- Python 3.x installed on your local machine
+- Required [AWS SDK for Python (Boto3)](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html). You can install with `pip`.
+
+
 ## Dry run across multiple regions
 
 ```bash
