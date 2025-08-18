@@ -1,0 +1,29 @@
+# Automated Migration Script for AWS Lambda Python 3.9 End-of-Support
+
+For more information about this deprecation, read the [article](https://repost.aws/articles/ARRCAyrRH9TTGsKWasFzdbdw/automated-migration-script-for-aws-lambda-python-3-9-end-of-support)
+
+## Dry run across multiple regions
+
+```bash
+python3 update_lambda_runtime.py --regions us-east-1 eu-west-1 --profile prod --dry-run
+```
+
+## Update with report generation
+
+```bash
+python3 update_lambda_runtime.py --regions us-east-1 --profile prod --report update_report.json
+or 
+python3 update_lambda_runtime.py --regions us-east-1 eu-west-1 ap-southeast-1 eu-west-2 us-west-2 --profile staging --dry-run --report update_report.json
+```
+
+## Rollback functions
+
+```bash
+python3 update_lambda_runtime.py --regions us-east-1 --profile prod --rollback
+```
+
+## Multiple regions with dry run
+
+```bash
+python3 update_lambda_runtime.py --regions us-east-1 eu-west-1 ap-southeast-1 --dry-run
+```
