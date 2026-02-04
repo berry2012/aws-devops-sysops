@@ -11,7 +11,7 @@ For more information about this deprecation, read the [article](https://repost.a
 ## Dry run Update across all AWS regions
 
 ```bash
-python3 update_lambda_runtime.py --regions all --profile prod --dry-run
+python3 update_lambda_runtime_all.py --regions all --profile prod --dry-run
 ```
 
 ## Dry run across multiple regions
