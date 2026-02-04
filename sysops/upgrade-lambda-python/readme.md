@@ -8,6 +8,11 @@ For more information about this deprecation, read the [article](https://repost.a
 - Python 3.x installed on your local machine
 - Required [AWS SDK for Python (Boto3)](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html). You can install with `pip`.
 
+## Dry run Update across all AWS regions
+
+```bash
+python3 update_lambda_runtime.py --regions all --profile prod --dry-run
+```
 
 ## Dry run across multiple regions
 
